@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ Chatbot</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body { background-image: url('/static/SBIBG.png'); background-size: cover; }
+        .chat-container { width: 850px; height: 5000px; margin: 80px 30px auto auto; padding: 15px; background: rgb(223, 223, 223, 0.6); border: 3px solid #5cabff; border-radius: 10px; box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.1); }
+        .chat-bubble { border-radius: 15px; padding: 10px; margin: 12px; }
+        .user { font-size: 17px; background: #007bff; color: white; align-self: flex-end; }
+        .bot { font-size: 17px; background: #ffffff; align-self: flex-start; }
+    </style>
+</head>
+<body>
+    <div class="container chat-container">
+        <div id="chat-box" class="d-flex flex-column"></div>
+        <input id="user-input" class="form-control" placeholder="Type your message here">
+        <button id="send-btn" class="btn btn-primary btn-block mt-2">Send</button>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $("#send-btn").click(function () {
+            const userQuery = $("#user-input").val();
+            if (userQuery.trim()) {
+                $("#chat-box").append(`<div class='chat-bubble user'>${userQuery}</div>`);
+
+                $.ajax({
+                    url: "/get_response",
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({ query: userQuery }),
+                    success: function (response) {
+                        if (response.response) {
+                            // Display the chatbot's answer
+                            $("#chat-box").append(`<div class='chat-bubble bot'>${response.response}</div>`);
+
+                            // If update_prompt exists, ask for confirmation
+                            if (response.update_prompt) {
+                                const updateQuestionID = `update-${Date.now()}`;
+                                $("#chat-box").append(
+                                    `<div class='chat-bubble bot' id="${updateQuestionID}">
+                                        ${response.update_prompt} (yes/no)
+                                    </div>`
+                                );
+
+                                // Listen for the user's response to the update prompt
+                                const checkForUpdate = setInterval(() => {
+                                    const userResponse = $("#user-input").val().trim().toLowerCase();
+                                    if (userResponse === "yes" || userResponse === "no") {
+                                        $("#chat-box").append(`<div class='chat-bubble user'>${userResponse}</div>`);
+                                        $("#user-input").val(""); // Clear input box
+
+                                        if (userResponse === "yes") {
+                                            const newAnswerID = `new-answer-${Date.now()}`;
+                                            $("#chat-box").append(
+                                                `<div class='chat-bubble bot' id="${newAnswerID}">
+                                                    Please enter the new answer:
+                                                </div>`
+                                            );
+
+                                            clearInterval(checkForUpdate);
+
+                                            const checkForNewAnswer = setInterval(() => {
+                                                const newAnswer = $("#user-input").val().trim();
+                                                if (newAnswer) {
+                                                    $("#chat-box").append(`<div class='chat-bubble user'>${newAnswer}</div>`);
+                                                    $("#user-input").val(""); // Clear input box
+
+                                                    // Send the new answer to the server
+                                                    $.ajax({
+                                                        url: "/update_answer",
+                                                        type: "POST",
+                                                        contentType: "application/json",
+                                                        data: JSON.stringify({
+                                                            question: response.matched_question,
+                                                            new_answer: newAnswer,
+                                                        }),
+                                                        success: function (updateRes) {
+                                                            $("#chat-box").append(
+                                                                `<div class='chat-bubble bot'>${updateRes.message}</div>`
+                                                            );
+                                                        },
+                                                    });
+
+                                                    clearInterval(checkForNewAnswer);
+                                                }
+                                            }, 5000); // Check every second
+                                        } else {
+                                            $("#chat-box").append(
+                                                `<div class='chat-bubble bot'>Okay, the answer will not be updated.</div>`
+                                            );
+                                            clearInterval(checkForUpdate);
+                                        }
+                                    }
+                                }, 5000); // Check every second
+                            }
+                        } else if (response.google_search) {
+                            // If no response, show Google search link
+                            $("#chat-box").append(
+                                `<div class='chat-bubble bot'><a href='${response.google_search}' target='_blank'>Click this link</a></div>`
+                            );
+                        }
+                    },
+                    error: function () {
+                        $("#chat-box").append(`<div class='chat-bubble bot'>Error processing your request.</div>`);
+                    },
+                });
+
+                $("#user-input").val(""); // Clear the input box
+            }
+        });
+    </script>
+</body>
+</html>
